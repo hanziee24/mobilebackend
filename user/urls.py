@@ -1,0 +1,33 @@
+from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
+from .views import register_view, UserProfileView, UserListView, RiderListView, AllRidersListView, CustomerListView, CashierListView, update_location, login_view, approve_user, approve_rider, reject_user, save_push_token, verify_email, resend_verification, create_staff, create_support_ticket, list_support_tickets, update_support_ticket, check_phone, saved_addresses, saved_address_detail, get_branches, assign_branch, branch_detail, reset_mpin
+
+urlpatterns = [
+    path('register/', register_view, name='register'),
+    path('login/', login_view, name='login'),
+    path('verify-email/', verify_email, name='verify_email'),
+    path('resend-verification/', resend_verification, name='resend_verification'),
+    path('branches/', get_branches, name='get_branches'),
+    path('branches/<int:branch_id>/', branch_detail, name='branch_detail'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('profile/', UserProfileView.as_view(), name='profile'),
+    path('users/', UserListView.as_view(), name='users'),
+    path('riders/', RiderListView.as_view(), name='riders'),
+    path('all-riders/', AllRidersListView.as_view(), name='all_riders'),
+    path('customers/', CustomerListView.as_view(), name='customers'),
+    path('cashiers/', CashierListView.as_view(), name='cashiers'),
+    path('update-location/', update_location, name='update_location'),
+    path('approve-user/<int:user_id>/', approve_user, name='approve_user'),
+    path('approve-rider/<int:user_id>/', approve_rider, name='approve_rider'),
+    path('reject-user/<int:user_id>/', reject_user, name='reject_user'),
+    path('<int:user_id>/push-token/', save_push_token, name='save_push_token'),
+    path('create-staff/', create_staff, name='create_staff'),
+    path('support/tickets/create/', create_support_ticket, name='create_support_ticket'),
+    path('support/tickets/', list_support_tickets, name='list_support_tickets'),
+    path('support/tickets/<int:ticket_id>/', update_support_ticket, name='update_support_ticket'),
+    path('riders/<int:user_id>/assign-branch/', assign_branch, name='assign_branch'),
+    path('reset-mpin/', reset_mpin, name='reset_mpin'),
+    path('check-phone/', check_phone, name='check_phone'),
+    path('addresses/', saved_addresses, name='saved_addresses'),
+    path('addresses/<int:address_id>/', saved_address_detail, name='saved_address_detail'),
+]
