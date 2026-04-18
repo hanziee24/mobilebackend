@@ -52,6 +52,7 @@ class User(AbstractUser):
     vehicle_plate = models.CharField(max_length=20, blank=True, null=True)
     vehicle_color = models.CharField(max_length=50, blank=True, null=True)
     license_number = models.CharField(max_length=50, blank=True, null=True)
+    motorcycle_registration = models.ImageField(upload_to='registrations/', blank=True, null=True)
     is_available = models.BooleanField(default=True)
     is_online = models.BooleanField(default=False)
     # Photo verification

@@ -260,7 +260,7 @@ def register_view(request):
             img = request.FILES['identity_image']
             image_name = img.name
             image_data = base64.b64encode(img.read()).decode('utf-8')
-        for photo_field in ['photo_front', 'photo_left', 'photo_right']:
+        for photo_field in ['photo_front', 'photo_left', 'photo_right', 'motorcycle_registration']:
             if photo_field in request.FILES:
                 f = request.FILES[photo_field]
                 extra_images[photo_field] = {
@@ -611,7 +611,7 @@ def verify_email(request):
                 image_bytes = base64.b64decode(pending.image_data)
                 user.identity_image.save(pending.image_name, ContentFile(image_bytes), save=False)
             extra_images = json.loads(getattr(pending, 'extra_data', '{}') or '{}')
-            for photo_field in ['photo_front', 'photo_left', 'photo_right']:
+            for photo_field in ['photo_front', 'photo_left', 'photo_right', 'motorcycle_registration']:
                 if photo_field in extra_images:
                     img_bytes = base64.b64decode(extra_images[photo_field]['data'])
                     getattr(user, photo_field).save(extra_images[photo_field]['name'], ContentFile(img_bytes), save=False)

@@ -79,6 +79,10 @@ class Delivery(models.Model):
     gcash_number = models.CharField(max_length=20, blank=True, null=True)
     gcash_proof = models.ImageField(upload_to='gcash_proofs/', blank=True, null=True)
 
+    # Payment info collected by cashier
+    payment_method = models.CharField(max_length=20, blank=True, null=True)
+    payment_reference = models.CharField(max_length=100, blank=True, null=True)
+
     is_approved = models.BooleanField(default=False)
     
     created_at = models.DateTimeField(auto_now_add=True)

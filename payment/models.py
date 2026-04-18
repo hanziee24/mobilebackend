@@ -4,7 +4,11 @@ from delivery.models import Delivery
 
 class Payment(models.Model):
     PAYMENT_METHOD_CHOICES = [
+        ('CASH', 'Cash'),
         ('GCASH', 'GCash'),
+        ('MAYA', 'Maya'),
+        ('BANK_TRANSFER', 'Bank Transfer'),
+        ('CREDIT_CARD', 'Credit/Debit Card'),
         ('COD', 'Cash on Delivery'),
     ]
     

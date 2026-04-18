@@ -18,7 +18,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'user_type', 'is_approved', 'is_email_verified',
                   'is_rejected', 'rejection_reason', 'phone', 'date_of_birth', 'address', 'branch', 'branch_name',
                   'vehicle_type', 'vehicle_brand', 'vehicle_plate', 'vehicle_color', 'license_number',
-                  'is_available', 'is_online', 'identity_image', 'photo_front', 'photo_left', 'photo_right',
+                  'motorcycle_registration', 'is_available', 'is_online', 'identity_image', 'photo_front', 'photo_left', 'photo_right',
                   'gcash_qr', 'created_at']
         read_only_fields = ['id', 'created_at', 'is_email_verified']
 

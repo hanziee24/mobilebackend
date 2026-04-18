@@ -335,11 +335,13 @@ class DeliveryViewSet(viewsets.ModelViewSet):
                     linked_customer = User.objects.get(phone=sender_contact, user_type='CUSTOMER')
                 except User.DoesNotExist:
                     pass
+            payment_reference = self.request.data.get('payment_reference', '')
             serializer.save(
                 customer=linked_customer or self.request.user,
                 tracking_number=tracking_number,
                 is_approved=True,
                 pickup_address='Branch Drop-off',
+                payment_reference=payment_reference or None,
             )
         else:
             serializer.save(customer=self.request.user, tracking_number=tracking_number)
