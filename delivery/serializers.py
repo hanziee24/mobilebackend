@@ -15,7 +15,7 @@ class DeliveryRequestSerializer(serializers.ModelSerializer):
         model = DeliveryRequest
         fields = ['id', 'customer_name', 'sender_name', 'sender_contact', 'sender_address',
                   'receiver_name', 'receiver_contact', 'receiver_address',
-                  'item_type', 'weight', 'quantity', 'is_fragile', 'special_instructions', 'status', 'created_at']
+                  'item_type', 'weight', 'quantity', 'is_fragile', 'special_instructions', 'preferred_payment_method', 'status', 'created_at']
         read_only_fields = ['id', 'status', 'created_at', 'customer_name']
 
 class DeliverySerializer(serializers.ModelSerializer):
@@ -47,3 +47,8 @@ class RatingSerializer(serializers.ModelSerializer):
         model = Rating
         fields = '__all__'
         read_only_fields = ['customer', 'rider', 'created_at']
+    
+    def validate_tip_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError('Tip amount cannot be negative')
+        return value

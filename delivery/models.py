@@ -109,6 +109,7 @@ class DeliveryRequest(models.Model):
     quantity = models.CharField(max_length=20)
     is_fragile = models.BooleanField(default=False)
     special_instructions = models.TextField(blank=True, null=True)
+    preferred_payment_method = models.CharField(max_length=20, blank=True, null=True, default='CASH')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -152,6 +153,7 @@ class Rating(models.Model):
     rider = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_ratings')
     rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)])  # 1-5 stars
     comment = models.TextField(blank=True, null=True)
+    tip_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
