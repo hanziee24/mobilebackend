@@ -365,18 +365,26 @@ class UserListView(generics.ListAPIView):
 class RiderListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
-    
+
     def get_queryset(self):
-        # Only return approved riders
         return User.objects.filter(user_type='RIDER', is_approved=True)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
 class AllRidersListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
-    
+
     def get_queryset(self):
-        # Return all riders (approved and pending) with their online status
         return User.objects.filter(user_type='RIDER')
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
 class CustomerListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
