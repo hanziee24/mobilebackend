@@ -1,5 +1,6 @@
 from rest_framework import serializers
 import re
+from urllib.parse import urlparse
 from .models import User, SupportTicket, SavedAddress, Branch
 
 
@@ -22,12 +23,30 @@ class UserSerializer(serializers.ModelSerializer):
     def _get_image_url(self, image_field):
         if not image_field:
             return None
-        url = image_field.url if hasattr(image_field, 'url') else str(image_field)
-        if url.startswith('http'):
+        try:
+            url = image_field.url if hasattr(image_field, 'url') else str(image_field)
+        except Exception:
+            url = str(image_field)
+
+        if not url:
+            return None
+
+        parsed = urlparse(url)
+        if parsed.scheme in ('http', 'https'):
             return url
+        if url.startswith('//'):
+            return f'https:{url}'
+
+        if not url.startswith('/'):
+            url = f'/{url}'
+
         request = self.context.get('request')
         if request:
-            return request.build_absolute_uri(url)
+            absolute_url = request.build_absolute_uri(url)
+            forwarded_proto = request.META.get('HTTP_X_FORWARDED_PROTO', '')
+            if forwarded_proto.lower() == 'https' and absolute_url.startswith('http://'):
+                return absolute_url.replace('http://', 'https://', 1)
+            return absolute_url
         return url
 
     def get_identity_image(self, obj):
