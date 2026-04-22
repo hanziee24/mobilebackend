@@ -892,17 +892,33 @@ class RatingViewSet(viewsets.ModelViewSet):
         return Rating.objects.all()
     
     def perform_create(self, serializer):
+        from rest_framework.exceptions import ValidationError
         delivery = serializer.validated_data['delivery']
         if delivery.customer != self.request.user:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError('You can only rate your own deliveries')
         if delivery.status != 'DELIVERED':
-            from rest_framework.exceptions import ValidationError
             raise ValidationError('Can only rate completed deliveries')
         if not delivery.rider:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError('This delivery has no assigned rider')
-        serializer.save(customer=self.request.user, rider=delivery.rider)
+        rating = serializer.save(customer=self.request.user, rider=delivery.rider)
+
+        tip = rating.tip_amount
+        if tip and tip > 0:
+            from payment.models import RiderWallet, WalletTransaction
+            wallet, _ = RiderWallet.objects.get_or_create(rider=delivery.rider)
+            balance_before = wallet.balance
+            wallet.balance += tip
+            wallet.total_earned += tip
+            wallet.save()
+            WalletTransaction.objects.create(
+                wallet=wallet,
+                transaction_type='EARNING',
+                amount=tip,
+                balance_before=balance_before,
+                balance_after=wallet.balance,
+                delivery=delivery,
+                description=f'Tip from customer for delivery {delivery.tracking_number}'
+            )
     
     @action(detail=False, methods=['get'])
     def pending(self, request):
