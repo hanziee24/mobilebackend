@@ -12,6 +12,41 @@ class BranchSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    identity_image = serializers.SerializerMethodField()
+    photo_front = serializers.SerializerMethodField()
+    photo_left = serializers.SerializerMethodField()
+    photo_right = serializers.SerializerMethodField()
+    motorcycle_registration = serializers.SerializerMethodField()
+    gcash_qr = serializers.SerializerMethodField()
+
+    def _get_image_url(self, image_field):
+        if not image_field:
+            return None
+        url = image_field.url if hasattr(image_field, 'url') else str(image_field)
+        if url.startswith('http'):
+            return url
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
+    def get_identity_image(self, obj):
+        return self._get_image_url(obj.identity_image)
+
+    def get_photo_front(self, obj):
+        return self._get_image_url(obj.photo_front)
+
+    def get_photo_left(self, obj):
+        return self._get_image_url(obj.photo_left)
+
+    def get_photo_right(self, obj):
+        return self._get_image_url(obj.photo_right)
+
+    def get_motorcycle_registration(self, obj):
+        return self._get_image_url(obj.motorcycle_registration)
+
+    def get_gcash_qr(self, obj):
+        return self._get_image_url(obj.gcash_qr)
 
     class Meta:
         model = User
