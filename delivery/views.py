@@ -79,6 +79,18 @@ def _extract_coordinates_from_address(address):
     return lat, lng
 
 
+def _with_coordinates(address, lat, lng):
+    base_label = (address or '').split('|')[0].strip()
+    parsed_lat = _to_float(lat)
+    parsed_lng = _to_float(lng)
+    if parsed_lat is None or parsed_lng is None:
+        return address
+    if not (-90 <= parsed_lat <= 90 and -180 <= parsed_lng <= 180):
+        return address
+    label = base_label or 'Pinned Location'
+    return f'{label}|{parsed_lat:.6f},{parsed_lng:.6f}'
+
+
 def _rider_coordinates(rider):
     """
     Prefer rider live location. Fallback to assigned branch coordinates.
@@ -326,25 +338,60 @@ class DeliveryViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         tracking_number = 'TRK-' + ''.join(random.choices(string.digits, k=10))
+        delivery_address = _with_coordinates(
+            self.request.data.get('delivery_address'),
+            self.request.data.get('delivery_latitude'),
+            self.request.data.get('delivery_longitude'),
+        )
         if self.request.user.user_type == 'CASHIER':
             # Try to link to existing customer account by sender phone number
             sender_contact = self.request.data.get('sender_contact', '')
+            sender_name = (self.request.data.get('sender_name') or '').strip().lower()
             linked_customer = None
             if sender_contact:
                 try:
-                    linked_customer = User.objects.get(phone=sender_contact, user_type='CUSTOMER')
+                    found = User.objects.get(phone=sender_contact, user_type='CUSTOMER')
+                    registered_name = (found.get_full_name() or found.username).strip().lower()
+                    # Reject if the name typed by cashier doesn't match the registered name at all
+                    name_parts = registered_name.split()
+                    if not any(part in sender_name for part in name_parts):
+                        from rest_framework.exceptions import ValidationError
+                        raise ValidationError(
+                            f'Name mismatch: the phone {sender_contact} is registered under "{found.get_full_name() or found.username}". '
+                            f'Please verify the customer identity before proceeding.'
+                        )
+                    linked_customer = found
                 except User.DoesNotExist:
                     pass
             payment_reference = self.request.data.get('payment_reference', '')
+            pickup_address = 'Branch Drop-off'
+            branch = getattr(self.request.user, 'branch', None)
+            if branch:
+                pickup_address = _with_coordinates(
+                    pickup_address,
+                    getattr(branch, 'latitude', None),
+                    getattr(branch, 'longitude', None),
+                )
             serializer.save(
                 customer=linked_customer or self.request.user,
                 tracking_number=tracking_number,
                 is_approved=True,
-                pickup_address='Branch Drop-off',
+                pickup_address=pickup_address,
+                delivery_address=delivery_address,
                 payment_reference=payment_reference or None,
             )
         else:
-            serializer.save(customer=self.request.user, tracking_number=tracking_number)
+            pickup_address = _with_coordinates(
+                self.request.data.get('pickup_address'),
+                self.request.data.get('sender_latitude'),
+                self.request.data.get('sender_longitude'),
+            )
+            serializer.save(
+                customer=self.request.user,
+                tracking_number=tracking_number,
+                pickup_address=pickup_address,
+                delivery_address=delivery_address,
+            )
     def _check_rider_assignment(self, request, *args, **kwargs):
         rider_id = request.data.get('rider')
         if not rider_id:

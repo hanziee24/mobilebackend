@@ -135,8 +135,14 @@ def check_phone(request):
     phone = (request.query_params.get('phone') or '').strip()
     if not phone:
         return Response({'exists': False})
-    exists = User.objects.filter(phone=phone, user_type='CUSTOMER').exists()
-    return Response({'exists': exists})
+    try:
+        customer = User.objects.get(phone=phone, user_type='CUSTOMER')
+        return Response({
+            'exists': True,
+            'full_name': customer.get_full_name() or customer.username,
+        })
+    except User.DoesNotExist:
+        return Response({'exists': False})
 
 
 @api_view(['POST'])

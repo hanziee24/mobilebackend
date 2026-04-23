@@ -4,10 +4,25 @@ from user.models import User
 
 class RiderSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    branch_latitude = serializers.DecimalField(source='branch.latitude', max_digits=9, decimal_places=6, read_only=True)
+    branch_longitude = serializers.DecimalField(source='branch.longitude', max_digits=9, decimal_places=6, read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'phone', 'current_latitude', 'current_longitude', 'location_updated_at', 'branch', 'branch_name']
+        fields = [
+            'id',
+            'username',
+            'first_name',
+            'last_name',
+            'phone',
+            'current_latitude',
+            'current_longitude',
+            'location_updated_at',
+            'branch',
+            'branch_name',
+            'branch_latitude',
+            'branch_longitude',
+        ]
 
 class DeliveryRequestSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
