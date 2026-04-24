@@ -740,6 +740,86 @@ def reset_mpin(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+def forgot_password_request(request):
+    email = (request.data.get('email') or '').strip().lower()
+    if not email:
+        return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response({'error': 'No account found with that email.'}, status=status.HTTP_404_NOT_FOUND)
+    code = _generate_verification_code()
+    user.email_verification_code = code
+    user.email_verification_expires = timezone.now() + timedelta(minutes=10)
+    user.save(update_fields=['email_verification_code', 'email_verification_expires'])
+    try:
+        send_mail(
+            subject='Your JRNZ Tracking Express password reset code',
+            message=(
+                f'Hi {user.first_name},\n\n'
+                f'Your password reset code is: {code}\n\n'
+                f'This code expires in 10 minutes. If you did not request this, ignore this email.\n\n'
+                f'JRNZ Tracking Express Team'
+            ),
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception as e:
+        print(f'Forgot password email error: {e}')
+        return Response({'error': 'Failed to send reset code. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return Response({'message': 'Password reset code sent to your email.'}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password_verify(request):
+    email = (request.data.get('email') or '').strip().lower()
+    code = (request.data.get('code') or '').strip()
+    if not email or not code:
+        return Response({'error': 'Email and code are required'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response({'error': 'No account found with that email.'}, status=status.HTTP_404_NOT_FOUND)
+    if not user.email_verification_code or not user.email_verification_expires:
+        return Response({'error': 'No active reset code. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+    if user.email_verification_expires < timezone.now():
+        return Response({'error': 'Reset code expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+    if code != user.email_verification_code:
+        return Response({'error': 'Invalid reset code.'}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({'message': 'Code verified.'}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password_reset(request):
+    email = (request.data.get('email') or '').strip().lower()
+    code = (request.data.get('code') or '').strip()
+    new_password = (request.data.get('new_password') or '').strip()
+    if not email or not code or not new_password:
+        return Response({'error': 'Email, code, and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(new_password) < 8:
+        return Response({'error': 'Password must be at least 8 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response({'error': 'No account found with that email.'}, status=status.HTTP_404_NOT_FOUND)
+    if not user.email_verification_code or not user.email_verification_expires:
+        return Response({'error': 'No active reset code. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+    if user.email_verification_expires < timezone.now():
+        return Response({'error': 'Reset code expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+    if code != user.email_verification_code:
+        return Response({'error': 'Invalid reset code.'}, status=status.HTTP_400_BAD_REQUEST)
+    user.set_password(new_password)
+    user.email_verification_code = None
+    user.email_verification_expires = None
+    user.save(update_fields=['password', 'email_verification_code', 'email_verification_expires'])
+    return Response({'message': 'Password reset successfully.'}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def create_support_ticket(request):
     serializer = SupportTicketCreateSerializer(data=request.data)
     if not serializer.is_valid():
