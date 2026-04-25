@@ -164,6 +164,7 @@ def check_phone(request):
         return Response({
             'exists': True,
             'full_name': customer.get_full_name() or customer.username,
+            'address': customer.address or '',
         })
     except User.DoesNotExist:
         return Response({'exists': False})
