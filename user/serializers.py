@@ -13,6 +13,7 @@ class BranchSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    branch_address = serializers.CharField(source='branch.address', read_only=True)
     identity_image = serializers.SerializerMethodField()
     photo_front = serializers.SerializerMethodField()
     photo_left = serializers.SerializerMethodField()
@@ -70,7 +71,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'user_type', 'is_approved', 'is_email_verified',
-                  'is_rejected', 'rejection_reason', 'phone', 'date_of_birth', 'address', 'branch', 'branch_name',
+                  'is_rejected', 'rejection_reason', 'phone', 'date_of_birth', 'address', 'branch', 'branch_name', 'branch_address',
                   'vehicle_type', 'vehicle_brand', 'vehicle_plate', 'vehicle_color', 'license_number',
                   'motorcycle_registration', 'is_available', 'is_online', 'identity_image', 'photo_front', 'photo_left', 'photo_right',
                   'gcash_qr', 'created_at']

@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import register_view, UserProfileView, UserListView, RiderListView, AllRidersListView, CustomerListView, CashierListView, update_location, login_view, approve_user, approve_rider, reject_user, save_push_token, verify_email, resend_verification, create_staff, create_support_ticket, list_support_tickets, update_support_ticket, check_phone, saved_addresses, saved_address_detail, get_branches, assign_branch, branch_detail, reset_mpin, forgot_password_request, forgot_password_verify, forgot_password_reset
+from .views import register_view, UserProfileView, UserListView, RiderListView, AllRidersListView, CustomerListView, CashierListView, update_location, login_view, approve_user, approve_rider, reject_user, save_push_token, verify_email, resend_verification, create_staff, create_support_ticket, list_support_tickets, update_support_ticket, check_phone, saved_addresses, saved_address_detail, get_branches, assign_branch, branch_detail, reset_mpin, forgot_password_request, forgot_password_verify, forgot_password_reset, nearest_hub
 
 urlpatterns = [
     path('register/', register_view, name='register'),
@@ -31,6 +31,7 @@ urlpatterns = [
     path('forgot-password/verify/', forgot_password_verify, name='forgot_password_verify'),
     path('forgot-password/reset/', forgot_password_reset, name='forgot_password_reset'),
     path('check-phone/', check_phone, name='check_phone'),
+    path('nearest-hub/', nearest_hub, name='nearest_hub'),
     path('addresses/', saved_addresses, name='saved_addresses'),
     path('addresses/<int:address_id>/', saved_address_detail, name='saved_address_detail'),
 ]

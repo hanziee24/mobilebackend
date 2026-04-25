@@ -131,6 +131,30 @@ def saved_address_detail(request, address_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def nearest_hub(request):
+    import math
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    try:
+        lat = float(request.query_params.get('lat', ''))
+        lng = float(request.query_params.get('lng', ''))
+    except (TypeError, ValueError):
+        return Response({'error': 'lat and lng are required'}, status=status.HTTP_400_BAD_REQUEST)
+    branches = Branch.objects.filter(is_active=True, latitude__isnull=False, longitude__isnull=False)
+    results = []
+    for b in branches:
+        dist = haversine(lat, lng, float(b.latitude), float(b.longitude))
+        results.append({**BranchSerializer(b).data, 'distance_km': round(dist, 2)})
+    results.sort(key=lambda x: x['distance_km'])
+    return Response(results)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def check_phone(request):
     phone = (request.query_params.get('phone') or '').strip()
     if not phone:
@@ -509,9 +533,9 @@ def assign_branch(request, user_id):
         return Response({'error': 'Admin only'}, status=status.HTTP_403_FORBIDDEN)
     branch_id = request.data.get('branch_id')
     try:
-        rider = User.objects.get(id=user_id, user_type='RIDER')
+        rider = User.objects.get(id=user_id, user_type__in=['RIDER', 'CASHIER'])
     except User.DoesNotExist:
-        return Response({'error': 'Rider not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
     if branch_id is None:
         rider.branch = None
     else:
