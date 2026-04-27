@@ -3,6 +3,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.db import transaction
 from django.db.models import Avg, Count, Q
 from .models import Delivery, Notification, Rating, ChatMessage, DeliveryFeeConfig, DeliveryRequest
 from .serializers import DeliverySerializer, NotificationSerializer, RatingSerializer, DeliveryRequestSerializer
@@ -50,7 +51,10 @@ def _to_float(value):
     try:
         if value is None:
             return None
-        return float(value)
+        result = float(value)
+        if result != result or result == float('inf') or result == float('-inf'):  # guards nan and inf
+            return None
+        return result
     except (TypeError, ValueError):
         return None
 
@@ -70,8 +74,8 @@ def _extract_coordinates_from_address(address):
     if len(parts) != 2:
         return None, None
 
-    lat = _to_float(parts[0])
-    lng = _to_float(parts[1])
+    lat = _safe_coord(parts[0])
+    lng = _safe_coord(parts[1])
     if lat is None or lng is None:
         return None, None
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
@@ -79,10 +83,19 @@ def _extract_coordinates_from_address(address):
     return lat, lng
 
 
+def _safe_coord(value):
+    """Reject nan/inf strings before float conversion to prevent NaN injection."""
+    if value is None:
+        return None
+    if str(value).strip().lower() in ('nan', 'inf', '-inf', 'infinity', '-infinity'):
+        return None
+    return _to_float(value)
+
+
 def _with_coordinates(address, lat, lng):
     base_label = (address or '').split('|')[0].strip()
-    parsed_lat = _to_float(lat)
-    parsed_lng = _to_float(lng)
+    parsed_lat = _safe_coord(lat)
+    parsed_lng = _safe_coord(lng)
     if parsed_lat is None or parsed_lng is None:
         return address
     if not (-90 <= parsed_lat <= 90 and -180 <= parsed_lng <= 180):
@@ -344,6 +357,20 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             self.request.data.get('delivery_longitude'),
         )
         if self.request.user.user_type == 'CASHIER':
+            delivery_request = None
+            delivery_request_id = self.request.data.get('delivery_request_id')
+            if delivery_request_id:
+                try:
+                    delivery_request = DeliveryRequest.objects.select_related('customer').get(
+                        id=delivery_request_id,
+                        status__in=['PENDING', 'ACCEPTED']
+                    )
+                except DeliveryRequest.DoesNotExist:
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError('Delivery request not found or is no longer available.')
+            if not getattr(self.request.user, 'branch', None):
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError('You are not assigned to a hub. Please ask an admin to assign you to a branch before accepting parcels.')
             # Try to link to existing customer account by sender phone number
             sender_contact = self.request.data.get('sender_contact', '')
             sender_name = (self.request.data.get('sender_name') or '').strip().lower()
@@ -372,14 +399,18 @@ class DeliveryViewSet(viewsets.ModelViewSet):
                     getattr(branch, 'latitude', None),
                     getattr(branch, 'longitude', None),
                 )
-            serializer.save(
-                customer=linked_customer or self.request.user,
-                tracking_number=tracking_number,
-                is_approved=True,
-                pickup_address=pickup_address,
-                delivery_address=delivery_address,
-                payment_reference=payment_reference or None,
-            )
+            with transaction.atomic():
+                serializer.save(
+                    customer=(delivery_request.customer if delivery_request else linked_customer or self.request.user),
+                    tracking_number=tracking_number,
+                    is_approved=True,
+                    pickup_address=pickup_address,
+                    delivery_address=delivery_address,
+                    payment_reference=payment_reference or None,
+                )
+                if delivery_request and delivery_request.status != 'ACCEPTED':
+                    delivery_request.status = 'ACCEPTED'
+                    delivery_request.save(update_fields=['status'])
         else:
             pickup_address = _with_coordinates(
                 self.request.data.get('pickup_address'),
