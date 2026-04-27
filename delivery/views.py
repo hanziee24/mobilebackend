@@ -891,9 +891,12 @@ def create_delivery_request(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_delivery_requests(request):
-    if request.user.user_type not in ('CASHIER', 'ADMIN'):
-        return Response({'error': 'Cashier/Admin only'}, status=status.HTTP_403_FORBIDDEN)
-    requests_qs = DeliveryRequest.objects.filter(status='PENDING')
+    if request.user.user_type == 'CUSTOMER':
+        requests_qs = DeliveryRequest.objects.filter(customer=request.user).exclude(status='CANCELLED')
+    elif request.user.user_type in ('CASHIER', 'ADMIN'):
+        requests_qs = DeliveryRequest.objects.filter(status='PENDING')
+    else:
+        return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
     return Response(DeliveryRequestSerializer(requests_qs, many=True, context={'request': request}).data)
 
 
@@ -920,6 +923,8 @@ def cancel_delivery_request(request, request_id):
         dr = DeliveryRequest.objects.get(id=request_id, status='PENDING')
     except DeliveryRequest.DoesNotExist:
         return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+    if request.user.user_type == 'CUSTOMER' and dr.customer_id != request.user.id:
+        return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
     dr.status = 'CANCELLED'
     dr.save(update_fields=['status'])
     return Response({'message': 'Request cancelled'})

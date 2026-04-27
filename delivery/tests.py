@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from delivery.models import Delivery
+from delivery.models import Delivery, DeliveryRequest
 from delivery.views import auto_assign_rider
 from user.models import User, Branch
 
@@ -359,3 +359,148 @@ class RiderAssignmentValidationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data.get('rider'), self.other_branch_rider.id)
+
+
+class DeliveryRequestVisibilityTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.customer = User.objects.create_user(
+            username='customer_requests',
+            email='customer_requests@example.com',
+            password='testpass123',
+            user_type='CUSTOMER',
+            is_approved=True,
+            is_email_verified=True,
+        )
+        self.other_customer = User.objects.create_user(
+            username='other_customer_requests',
+            email='other_customer_requests@example.com',
+            password='testpass123',
+            user_type='CUSTOMER',
+            is_approved=True,
+            is_email_verified=True,
+        )
+        self.cashier = User.objects.create_user(
+            username='cashier_requests',
+            email='cashier_requests@example.com',
+            password='testpass123',
+            user_type='CASHIER',
+            is_approved=True,
+            is_email_verified=True,
+        )
+
+    def test_customer_can_list_own_active_delivery_requests(self):
+        own_pending = DeliveryRequest.objects.create(
+            customer=self.customer,
+            sender_name='Sender One',
+            sender_contact='09123456789',
+            sender_address='Sender Address',
+            receiver_name='Receiver One',
+            receiver_contact='09987654321',
+            receiver_address='Receiver Address',
+            item_type='Documents',
+            weight='1',
+            quantity='1',
+            status='PENDING',
+        )
+        own_accepted = DeliveryRequest.objects.create(
+            customer=self.customer,
+            sender_name='Sender Two',
+            sender_contact='09123456780',
+            sender_address='Sender Address',
+            receiver_name='Receiver Two',
+            receiver_contact='09987654320',
+            receiver_address='Receiver Address',
+            item_type='Parcel',
+            weight='2',
+            quantity='1',
+            status='ACCEPTED',
+        )
+        DeliveryRequest.objects.create(
+            customer=self.customer,
+            sender_name='Sender Three',
+            sender_contact='09123456781',
+            sender_address='Sender Address',
+            receiver_name='Receiver Three',
+            receiver_contact='09987654322',
+            receiver_address='Receiver Address',
+            item_type='Parcel',
+            weight='3',
+            quantity='1',
+            status='CANCELLED',
+        )
+        DeliveryRequest.objects.create(
+            customer=self.other_customer,
+            sender_name='Sender Other',
+            sender_contact='09123456782',
+            sender_address='Sender Address',
+            receiver_name='Receiver Other',
+            receiver_contact='09987654323',
+            receiver_address='Receiver Address',
+            item_type='Parcel',
+            weight='4',
+            quantity='1',
+            status='PENDING',
+        )
+
+        self.client.force_authenticate(user=self.customer)
+        response = self.client.get('/api/delivery-requests/')
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = {item['id'] for item in response.data}
+        self.assertEqual(returned_ids, {own_pending.id, own_accepted.id})
+
+    def test_customer_cannot_cancel_another_customers_request(self):
+        foreign_request = DeliveryRequest.objects.create(
+            customer=self.other_customer,
+            sender_name='Sender Other',
+            sender_contact='09123456782',
+            sender_address='Sender Address',
+            receiver_name='Receiver Other',
+            receiver_contact='09987654323',
+            receiver_address='Receiver Address',
+            item_type='Parcel',
+            weight='4',
+            quantity='1',
+            status='PENDING',
+        )
+
+        self.client.force_authenticate(user=self.customer)
+        response = self.client.post(f'/api/delivery-requests/{foreign_request.id}/cancel/')
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_cashier_only_sees_pending_delivery_requests(self):
+        pending_request = DeliveryRequest.objects.create(
+            customer=self.customer,
+            sender_name='Sender One',
+            sender_contact='09123456789',
+            sender_address='Sender Address',
+            receiver_name='Receiver One',
+            receiver_contact='09987654321',
+            receiver_address='Receiver Address',
+            item_type='Documents',
+            weight='1',
+            quantity='1',
+            status='PENDING',
+        )
+        DeliveryRequest.objects.create(
+            customer=self.customer,
+            sender_name='Sender Two',
+            sender_contact='09123456780',
+            sender_address='Sender Address',
+            receiver_name='Receiver Two',
+            receiver_contact='09987654320',
+            receiver_address='Receiver Address',
+            item_type='Parcel',
+            weight='2',
+            quantity='1',
+            status='ACCEPTED',
+        )
+
+        self.client.force_authenticate(user=self.cashier)
+        response = self.client.get('/api/delivery-requests/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['id'], pending_request.id)
