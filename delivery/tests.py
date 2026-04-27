@@ -389,7 +389,7 @@ class DeliveryRequestVisibilityTests(TestCase):
             is_email_verified=True,
         )
 
-    def test_customer_can_list_own_active_delivery_requests(self):
+    def test_customer_can_list_own_pending_delivery_requests(self):
         own_pending = DeliveryRequest.objects.create(
             customer=self.customer,
             sender_name='Sender One',
@@ -402,19 +402,6 @@ class DeliveryRequestVisibilityTests(TestCase):
             weight='1',
             quantity='1',
             status='PENDING',
-        )
-        own_accepted = DeliveryRequest.objects.create(
-            customer=self.customer,
-            sender_name='Sender Two',
-            sender_contact='09123456780',
-            sender_address='Sender Address',
-            receiver_name='Receiver Two',
-            receiver_contact='09987654320',
-            receiver_address='Receiver Address',
-            item_type='Parcel',
-            weight='2',
-            quantity='1',
-            status='ACCEPTED',
         )
         DeliveryRequest.objects.create(
             customer=self.customer,
@@ -448,7 +435,7 @@ class DeliveryRequestVisibilityTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         returned_ids = {item['id'] for item in response.data}
-        self.assertEqual(returned_ids, {own_pending.id, own_accepted.id})
+        self.assertEqual(returned_ids, {own_pending.id})
 
     def test_customer_cannot_cancel_another_customers_request(self):
         foreign_request = DeliveryRequest.objects.create(

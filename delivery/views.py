@@ -892,7 +892,7 @@ def create_delivery_request(request):
 @permission_classes([IsAuthenticated])
 def list_delivery_requests(request):
     if request.user.user_type == 'CUSTOMER':
-        requests_qs = DeliveryRequest.objects.filter(customer=request.user).exclude(status='CANCELLED')
+        requests_qs = DeliveryRequest.objects.filter(customer=request.user, status='PENDING')
     elif request.user.user_type in ('CASHIER', 'ADMIN'):
         requests_qs = DeliveryRequest.objects.filter(status='PENDING')
     else:
