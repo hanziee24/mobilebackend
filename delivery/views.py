@@ -399,15 +399,18 @@ class DeliveryViewSet(viewsets.ModelViewSet):
                     getattr(branch, 'latitude', None),
                     getattr(branch, 'longitude', None),
                 )
+            save_kwargs = {
+                'customer': (delivery_request.customer if delivery_request else linked_customer or self.request.user),
+                'tracking_number': tracking_number,
+                'is_approved': True,
+                'pickup_address': pickup_address,
+                'delivery_address': delivery_address,
+                'payment_reference': payment_reference or None,
+            }
+            if delivery_request and delivery_request.package_photo and 'package_photo' not in self.request.FILES:
+                save_kwargs['package_photo'] = delivery_request.package_photo.name
             with transaction.atomic():
-                serializer.save(
-                    customer=(delivery_request.customer if delivery_request else linked_customer or self.request.user),
-                    tracking_number=tracking_number,
-                    is_approved=True,
-                    pickup_address=pickup_address,
-                    delivery_address=delivery_address,
-                    payment_reference=payment_reference or None,
-                )
+                serializer.save(**save_kwargs)
                 if delivery_request and delivery_request.status != 'ACCEPTED':
                     delivery_request.status = 'ACCEPTED'
                     delivery_request.save(update_fields=['status'])
@@ -871,7 +874,7 @@ def create_delivery_request(request):
     serializer = DeliveryRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    serializer.save(customer=request.user)
+    delivery_request = serializer.save(customer=request.user)
     # Notify all cashiers
     for cashier in User.objects.filter(user_type='CASHIER', is_active=True):
         Notification.objects.create(
@@ -879,7 +882,10 @@ def create_delivery_request(request):
             title='📦 New Delivery Request',
             message=f'{request.user.get_full_name() or request.user.username} sent a delivery request to the cashier.',
         )
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(
+        DeliveryRequestSerializer(delivery_request, context={'request': request}).data,
+        status=status.HTTP_201_CREATED
+    )
 
 
 @api_view(['GET'])
@@ -888,7 +894,7 @@ def list_delivery_requests(request):
     if request.user.user_type not in ('CASHIER', 'ADMIN'):
         return Response({'error': 'Cashier/Admin only'}, status=status.HTTP_403_FORBIDDEN)
     requests_qs = DeliveryRequest.objects.filter(status='PENDING')
-    return Response(DeliveryRequestSerializer(requests_qs, many=True).data)
+    return Response(DeliveryRequestSerializer(requests_qs, many=True, context={'request': request}).data)
 
 
 @api_view(['POST'])
@@ -902,7 +908,7 @@ def accept_delivery_request(request, request_id):
         return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
     dr.status = 'ACCEPTED'
     dr.save(update_fields=['status'])
-    return Response(DeliveryRequestSerializer(dr).data)
+    return Response(DeliveryRequestSerializer(dr, context={'request': request}).data)
 
 
 @api_view(['POST'])

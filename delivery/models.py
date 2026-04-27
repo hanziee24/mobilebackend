@@ -108,6 +108,7 @@ class DeliveryRequest(models.Model):
     weight = models.CharField(max_length=20)
     quantity = models.CharField(max_length=20)
     is_fragile = models.BooleanField(default=False)
+    package_photo = models.ImageField(upload_to='packages/', blank=True, null=True)
     special_instructions = models.TextField(blank=True, null=True)
     preferred_payment_method = models.CharField(max_length=20, blank=True, null=True, default='CASH')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
