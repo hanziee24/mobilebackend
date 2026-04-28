@@ -1,5 +1,6 @@
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -390,8 +391,13 @@ class CashierListView(generics.ListAPIView):
 
 class UserListView(generics.ListAPIView):
     queryset = User.objects.exclude(email='admin@gmail.com')
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
+
+    def get_queryset(self):
+        if self.request.user.user_type != 'ADMIN':
+            raise PermissionDenied('Admin only')
+        return super().get_queryset()
 
 class RiderListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]

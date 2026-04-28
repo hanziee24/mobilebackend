@@ -30,12 +30,21 @@ class RiderWalletSerializer(serializers.ModelSerializer):
 
 
 class WalletTransactionSerializer(serializers.ModelSerializer):
+    delivery = serializers.SerializerMethodField()
     delivery_tracking = serializers.SerializerMethodField()
     
     class Meta:
         model = WalletTransaction
         fields = '__all__'
         read_only_fields = ['wallet', 'created_at']
+
+    def get_delivery(self, obj):
+        if not obj.delivery:
+            return None
+        return {
+            'id': obj.delivery.id,
+            'tracking_number': obj.delivery.tracking_number,
+        }
     
     def get_delivery_tracking(self, obj):
         return obj.delivery.tracking_number if obj.delivery else None

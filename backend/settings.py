@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 from datetime import timedelta
 from importlib.util import find_spec
 import cloudinary
@@ -192,11 +193,17 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+IS_TEST = 'test' in sys.argv
+default_database_url = (
+    config('TEST_DATABASE_URL', default=f'sqlite:///{BASE_DIR / "test_db.sqlite3"}')
+    if IS_TEST else config('DATABASE_URL')
+)
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default=config('DATABASE_URL'),
-        conn_max_age=600,
-        ssl_require=not DEBUG,
+    'default': dj_database_url.parse(
+        default_database_url,
+        conn_max_age=0 if IS_TEST else 600,
+        ssl_require=False if IS_TEST else not DEBUG,
     )
 }
 
