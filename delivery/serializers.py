@@ -58,10 +58,7 @@ class RiderSerializer(serializers.ModelSerializer):
 
 class DeliveryRequestSerializer(BaseImageUrlSerializer):
     customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
-    package_photo = serializers.SerializerMethodField()
-
-    def get_package_photo(self, obj):
-        return self._get_image_url(obj.package_photo)
+    package_photo = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = DeliveryRequest
@@ -69,6 +66,11 @@ class DeliveryRequestSerializer(BaseImageUrlSerializer):
                   'receiver_name', 'receiver_contact', 'receiver_address',
                   'item_type', 'weight', 'quantity', 'is_fragile', 'package_photo', 'special_instructions', 'preferred_payment_method', 'status', 'created_at']
         read_only_fields = ['id', 'status', 'created_at', 'customer_name']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['package_photo'] = self._get_image_url(instance.package_photo)
+        return data
 
 class DeliverySerializer(BaseImageUrlSerializer):
     rider_details = RiderSerializer(source='rider', read_only=True)

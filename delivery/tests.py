@@ -1,5 +1,6 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from delivery.models import Delivery, DeliveryRequest
 from delivery.views import auto_assign_rider
@@ -491,3 +492,58 @@ class DeliveryRequestVisibilityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['id'], pending_request.id)
+
+
+class DeliveryRequestCreateTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.customer = User.objects.create_user(
+            username='customer_create_request',
+            email='customer_create_request@example.com',
+            password='testpass123',
+            user_type='CUSTOMER',
+            is_approved=True,
+            is_email_verified=True,
+        )
+        self.cashier = User.objects.create_user(
+            username='cashier_create_request',
+            email='cashier_create_request@example.com',
+            password='testpass123',
+            user_type='CASHIER',
+            is_approved=True,
+            is_email_verified=True,
+        )
+        self.payload = {
+            'sender_name': 'Sender One',
+            'sender_contact': '09123456789',
+            'sender_address': 'Sender Address',
+            'receiver_name': 'Receiver One',
+            'receiver_contact': '09987654321',
+            'receiver_address': 'Receiver Address',
+            'item_type': 'Laptop',
+            'weight': '1.000',
+            'quantity': '2',
+            'is_fragile': 'true',
+            'preferred_payment_method': 'CASH',
+        }
+
+    def test_customer_can_create_delivery_request(self):
+        self.client.force_authenticate(user=self.customer)
+
+        response = self.client.post('/api/delivery-requests/create/', self.payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(DeliveryRequest.objects.count(), 1)
+        saved_request = DeliveryRequest.objects.get()
+        self.assertEqual(saved_request.customer_id, self.customer.id)
+        self.assertEqual(saved_request.sender_address, 'Sender Address')
+        self.assertEqual(saved_request.preferred_payment_method, 'CASH')
+
+    def test_delivery_request_still_succeeds_when_notification_creation_fails(self):
+        self.client.force_authenticate(user=self.customer)
+
+        with patch('delivery.views.Notification.objects.create', side_effect=Exception('notification failure')):
+            response = self.client.post('/api/delivery-requests/create/', self.payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(DeliveryRequest.objects.count(), 1)

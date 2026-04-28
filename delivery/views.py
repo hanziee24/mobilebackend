@@ -12,6 +12,9 @@ from user.models import User, Branch
 from math import radians, sin, cos, sqrt, atan2
 import random
 import string
+import logging
+
+logger = logging.getLogger(__name__)
 
 STATUS_CHOICES_MAP = dict(Delivery.STATUS_CHOICES)
 ACTIVE_DELIVERY_STATUSES = ['PENDING', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY']
@@ -882,6 +885,38 @@ def create_delivery_request(request):
             title='📦 New Delivery Request',
             message=f'{request.user.get_full_name() or request.user.username} sent a delivery request to the cashier.',
         )
+    return Response(
+        DeliveryRequestSerializer(delivery_request, context={'request': request}).data,
+        status=status.HTTP_201_CREATED
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_delivery_request(request):
+    if request.user.user_type != 'CUSTOMER':
+        return Response({'error': 'Customers only'}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = DeliveryRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    delivery_request = serializer.save(customer=request.user)
+    cashiers = User.objects.filter(user_type='CASHIER', is_active=True)
+    for cashier in cashiers:
+        try:
+            Notification.objects.create(
+                user=cashier,
+                title='New Delivery Request',
+                message=f'{request.user.get_full_name() or request.user.username} sent a delivery request to the cashier.',
+            )
+        except Exception:
+            logger.exception(
+                'Failed to create cashier notification for delivery request %s and cashier %s',
+                delivery_request.id,
+                cashier.id,
+            )
+
     return Response(
         DeliveryRequestSerializer(delivery_request, context={'request': request}).data,
         status=status.HTTP_201_CREATED
