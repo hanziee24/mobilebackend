@@ -1,24 +1,16 @@
-from decimal import Decimal
 import random
 import string
 
-from django.db import transaction
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from delivery.models import Delivery
 
-from .models import Payment, RiderWallet, WalletTransaction, WithdrawalRequest
-from .serializers import (
-    PaymentSerializer,
-    RiderWalletSerializer,
-    WalletTransactionSerializer,
-    WithdrawalRequestSerializer,
-)
+from .models import Payment, RiderWallet, WalletTransaction
+from .serializers import PaymentSerializer, RiderWalletSerializer, WalletTransactionSerializer
 
 
 def generate_receipt_number():
@@ -69,7 +61,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             customer=delivery.customer,
             payment_method=payment_method,
             amount=amount,
-            transaction_fee=Decimal('0'),
+            transaction_fee=0,
             net_amount=amount,
             receipt_number=generate_receipt_number(),
             status='PENDING',
@@ -178,89 +170,3 @@ class RiderWalletViewSet(viewsets.ReadOnlyModelViewSet):
         transactions = wallet.transactions.select_related('delivery').all()[:50]
         serializer = WalletTransactionSerializer(transactions, many=True)
         return Response(serializer.data)
-
-
-class WithdrawalRequestViewSet(viewsets.ModelViewSet):
-    serializer_class = WithdrawalRequestSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.user_type == 'RIDER':
-            return WithdrawalRequest.objects.filter(rider=user)
-        if user.user_type == 'ADMIN':
-            return WithdrawalRequest.objects.all()
-        return WithdrawalRequest.objects.none()
-
-    def perform_create(self, serializer):
-        """Create a withdrawal request."""
-        if self.request.user.user_type != 'RIDER':
-            raise PermissionDenied('Only riders can request withdrawals')
-
-        wallet, _created = RiderWallet.objects.get_or_create(rider=self.request.user)
-        amount = serializer.validated_data['amount']
-
-        if amount < Decimal('100'):
-            raise ValidationError({'amount': 'Minimum withdrawal amount is ₱100'})
-        if wallet.balance < amount:
-            raise ValidationError({'amount': 'Insufficient balance'})
-
-        serializer.save(rider=self.request.user, wallet=wallet)
-
-    @action(detail=True, methods=['post'])
-    def approve(self, request, pk=None):
-        """Approve a withdrawal request (Admin only)."""
-        if request.user.user_type != 'ADMIN':
-            return Response({'error': 'Only admins can approve'}, status=status.HTTP_403_FORBIDDEN)
-
-        with transaction.atomic():
-            withdrawal = WithdrawalRequest.objects.select_for_update().select_related('wallet').get(pk=self.get_object().pk)
-            if withdrawal.status != 'PENDING':
-                return Response({'error': 'Can only approve pending requests'}, status=status.HTTP_400_BAD_REQUEST)
-
-            wallet = RiderWallet.objects.select_for_update().get(pk=withdrawal.wallet_id)
-            if wallet.balance < withdrawal.amount:
-                return Response(
-                    {'error': 'Cannot approve withdrawal because the rider wallet no longer has enough balance'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            balance_before = wallet.balance
-            wallet.balance -= withdrawal.amount
-            wallet.total_withdrawn += withdrawal.amount
-            wallet.save(update_fields=['balance', 'total_withdrawn', 'updated_at'])
-
-            WalletTransaction.objects.create(
-                wallet=wallet,
-                transaction_type='WITHDRAWAL',
-                amount=-withdrawal.amount,
-                balance_before=balance_before,
-                balance_after=wallet.balance,
-                withdrawal_request=withdrawal,
-                description=f'Withdrawal via {withdrawal.withdrawal_method}',
-            )
-
-            withdrawal.status = 'APPROVED'
-            withdrawal.processed_by = request.user
-            withdrawal.processed_at = timezone.now()
-            withdrawal.save(update_fields=['status', 'processed_by', 'processed_at'])
-
-        return Response({'message': 'Withdrawal approved'})
-
-    @action(detail=True, methods=['post'])
-    def reject(self, request, pk=None):
-        """Reject a withdrawal request (Admin only)."""
-        if request.user.user_type != 'ADMIN':
-            return Response({'error': 'Only admins can reject'}, status=status.HTTP_403_FORBIDDEN)
-
-        withdrawal = self.get_object()
-        if withdrawal.status != 'PENDING':
-            return Response({'error': 'Can only reject pending requests'}, status=status.HTTP_400_BAD_REQUEST)
-
-        withdrawal.status = 'REJECTED'
-        withdrawal.processed_by = request.user
-        withdrawal.processed_at = timezone.now()
-        withdrawal.admin_notes = request.data.get('reason', 'No reason provided')
-        withdrawal.save(update_fields=['status', 'processed_by', 'processed_at', 'admin_notes'])
-
-        return Response({'message': 'Withdrawal rejected'})

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Payment, RiderWallet, WalletTransaction, WithdrawalRequest
+from .models import Payment, RiderWallet, WalletTransaction
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
@@ -20,10 +20,3 @@ class WalletTransactionAdmin(admin.ModelAdmin):
     list_filter = ['transaction_type', 'created_at']
     search_fields = ['wallet__rider__username', 'description']
     readonly_fields = ['created_at']
-
-@admin.register(WithdrawalRequest)
-class WithdrawalRequestAdmin(admin.ModelAdmin):
-    list_display = ['rider', 'amount', 'withdrawal_method', 'status', 'created_at']
-    list_filter = ['withdrawal_method', 'status', 'created_at']
-    search_fields = ['rider__username', 'account_name', 'account_number']
-    readonly_fields = ['created_at', 'processed_at']

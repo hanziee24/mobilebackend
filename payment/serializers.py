@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Payment, RiderWallet, WalletTransaction, WithdrawalRequest
+from .models import Payment, RiderWallet, WalletTransaction
 
 class PaymentSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
@@ -48,19 +48,3 @@ class WalletTransactionSerializer(serializers.ModelSerializer):
     
     def get_delivery_tracking(self, obj):
         return obj.delivery.tracking_number if obj.delivery else None
-
-
-class WithdrawalRequestSerializer(serializers.ModelSerializer):
-    rider_name = serializers.SerializerMethodField()
-    processed_by_name = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = WithdrawalRequest
-        fields = '__all__'
-        read_only_fields = ['rider', 'wallet', 'status', 'processed_by', 'processed_at', 'created_at']
-    
-    def get_rider_name(self, obj):
-        return obj.rider.get_full_name()
-    
-    def get_processed_by_name(self, obj):
-        return obj.processed_by.get_full_name() if obj.processed_by else None
