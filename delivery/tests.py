@@ -2,7 +2,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
-from delivery.models import Delivery, DeliveryRequest
+from delivery.models import Delivery, DeliveryRequest, Notification
 from delivery.views import auto_assign_rider
 from user.models import User, Branch
 
@@ -365,6 +365,18 @@ class RiderAssignmentValidationTests(TestCase):
 class DeliveryRequestVisibilityTests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.branch_a = Branch.objects.create(
+            name='Bulacao Hub',
+            address='Bulacao, Cebu City',
+            latitude=10.280000,
+            longitude=123.850000,
+        )
+        self.branch_b = Branch.objects.create(
+            name='Mambaling Hub',
+            address='Mambaling, Cebu City',
+            latitude=10.295000,
+            longitude=123.880000,
+        )
         self.customer = User.objects.create_user(
             username='customer_requests',
             email='customer_requests@example.com',
@@ -388,6 +400,16 @@ class DeliveryRequestVisibilityTests(TestCase):
             user_type='CASHIER',
             is_approved=True,
             is_email_verified=True,
+            branch=self.branch_a,
+        )
+        self.other_cashier = User.objects.create_user(
+            username='cashier_requests_other',
+            email='cashier_requests_other@example.com',
+            password='testpass123',
+            user_type='CASHIER',
+            is_approved=True,
+            is_email_verified=True,
+            branch=self.branch_b,
         )
 
     def test_customer_can_list_own_pending_delivery_requests(self):
@@ -395,39 +417,42 @@ class DeliveryRequestVisibilityTests(TestCase):
             customer=self.customer,
             sender_name='Sender One',
             sender_contact='09123456789',
-            sender_address='Sender Address',
+            sender_address='Sender Address|10.280100,123.850100',
             receiver_name='Receiver One',
             receiver_contact='09987654321',
             receiver_address='Receiver Address',
             item_type='Documents',
             weight='1',
             quantity='1',
+            target_branch=self.branch_a,
             status='PENDING',
         )
         DeliveryRequest.objects.create(
             customer=self.customer,
             sender_name='Sender Three',
             sender_contact='09123456781',
-            sender_address='Sender Address',
+            sender_address='Sender Address|10.280100,123.850100',
             receiver_name='Receiver Three',
             receiver_contact='09987654322',
             receiver_address='Receiver Address',
             item_type='Parcel',
             weight='3',
             quantity='1',
+            target_branch=self.branch_a,
             status='CANCELLED',
         )
         DeliveryRequest.objects.create(
             customer=self.other_customer,
             sender_name='Sender Other',
             sender_contact='09123456782',
-            sender_address='Sender Address',
+            sender_address='Sender Address|10.295100,123.880100',
             receiver_name='Receiver Other',
             receiver_contact='09987654323',
             receiver_address='Receiver Address',
             item_type='Parcel',
             weight='4',
             quantity='1',
+            target_branch=self.branch_b,
             status='PENDING',
         )
 
@@ -443,13 +468,14 @@ class DeliveryRequestVisibilityTests(TestCase):
             customer=self.other_customer,
             sender_name='Sender Other',
             sender_contact='09123456782',
-            sender_address='Sender Address',
+            sender_address='Sender Address|10.295100,123.880100',
             receiver_name='Receiver Other',
             receiver_contact='09987654323',
             receiver_address='Receiver Address',
             item_type='Parcel',
             weight='4',
             quantity='1',
+            target_branch=self.branch_b,
             status='PENDING',
         )
 
@@ -458,32 +484,48 @@ class DeliveryRequestVisibilityTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_cashier_only_sees_pending_delivery_requests(self):
-        pending_request = DeliveryRequest.objects.create(
+    def test_cashier_only_sees_pending_delivery_requests_for_their_hub(self):
+        own_hub_request = DeliveryRequest.objects.create(
             customer=self.customer,
             sender_name='Sender One',
             sender_contact='09123456789',
-            sender_address='Sender Address',
+            sender_address='Sender Address|10.280100,123.850100',
             receiver_name='Receiver One',
             receiver_contact='09987654321',
             receiver_address='Receiver Address',
             item_type='Documents',
             weight='1',
             quantity='1',
+            target_branch=self.branch_a,
             status='PENDING',
         )
         DeliveryRequest.objects.create(
             customer=self.customer,
             sender_name='Sender Two',
             sender_contact='09123456780',
-            sender_address='Sender Address',
+            sender_address='Sender Address|10.280100,123.850100',
             receiver_name='Receiver Two',
             receiver_contact='09987654320',
             receiver_address='Receiver Address',
             item_type='Parcel',
             weight='2',
             quantity='1',
+            target_branch=self.branch_a,
             status='ACCEPTED',
+        )
+        DeliveryRequest.objects.create(
+            customer=self.customer,
+            sender_name='Sender Far',
+            sender_contact='09123456770',
+            sender_address='Sender Address|10.295100,123.880100',
+            receiver_name='Receiver Far',
+            receiver_contact='09987654310',
+            receiver_address='Receiver Address',
+            item_type='Parcel',
+            weight='2',
+            quantity='1',
+            target_branch=self.branch_b,
+            status='PENDING',
         )
 
         self.client.force_authenticate(user=self.cashier)
@@ -491,12 +533,24 @@ class DeliveryRequestVisibilityTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['id'], pending_request.id)
+        self.assertEqual(response.data[0]['id'], own_hub_request.id)
 
 
 class DeliveryRequestCreateTests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.branch_a = Branch.objects.create(
+            name='Bulacao Hub',
+            address='Bulacao, Cebu City',
+            latitude=10.280000,
+            longitude=123.850000,
+        )
+        self.branch_b = Branch.objects.create(
+            name='Mambaling Hub',
+            address='Mambaling, Cebu City',
+            latitude=10.295000,
+            longitude=123.880000,
+        )
         self.customer = User.objects.create_user(
             username='customer_create_request',
             email='customer_create_request@example.com',
@@ -512,11 +566,21 @@ class DeliveryRequestCreateTests(TestCase):
             user_type='CASHIER',
             is_approved=True,
             is_email_verified=True,
+            branch=self.branch_a,
+        )
+        self.other_cashier = User.objects.create_user(
+            username='cashier_create_request_other',
+            email='cashier_create_request_other@example.com',
+            password='testpass123',
+            user_type='CASHIER',
+            is_approved=True,
+            is_email_verified=True,
+            branch=self.branch_b,
         )
         self.payload = {
             'sender_name': 'Sender One',
             'sender_contact': '09123456789',
-            'sender_address': 'Sender Address',
+            'sender_address': 'Sender Address|10.280100,123.850100',
             'receiver_name': 'Receiver One',
             'receiver_contact': '09987654321',
             'receiver_address': 'Receiver Address',
@@ -525,6 +589,7 @@ class DeliveryRequestCreateTests(TestCase):
             'quantity': '2',
             'is_fragile': 'true',
             'preferred_payment_method': 'CASH',
+            'target_branch': str(self.branch_a.id),
         }
 
     def test_customer_can_create_delivery_request(self):
@@ -536,8 +601,9 @@ class DeliveryRequestCreateTests(TestCase):
         self.assertEqual(DeliveryRequest.objects.count(), 1)
         saved_request = DeliveryRequest.objects.get()
         self.assertEqual(saved_request.customer_id, self.customer.id)
-        self.assertEqual(saved_request.sender_address, 'Sender Address')
+        self.assertEqual(saved_request.sender_address, 'Sender Address|10.280100,123.850100')
         self.assertEqual(saved_request.preferred_payment_method, 'CASH')
+        self.assertEqual(saved_request.target_branch_id, self.branch_a.id)
 
     def test_delivery_request_still_succeeds_when_notification_creation_fails(self):
         self.client.force_authenticate(user=self.customer)
@@ -547,3 +613,12 @@ class DeliveryRequestCreateTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(DeliveryRequest.objects.count(), 1)
+
+    def test_delivery_request_only_notifies_cashiers_from_target_hub(self):
+        self.client.force_authenticate(user=self.customer)
+
+        response = self.client.post('/api/delivery-requests/create/', self.payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Notification.objects.filter(user=self.cashier).count(), 1)
+        self.assertEqual(Notification.objects.filter(user=self.other_cashier).count(), 0)

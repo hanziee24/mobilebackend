@@ -1,5 +1,5 @@
 from django.db import models
-from user.models import User
+from user.models import User, Branch
 
 class DeliveryFeeConfig(models.Model):
     base_fee = models.DecimalField(max_digits=10, decimal_places=2, default=50)
@@ -111,6 +111,7 @@ class DeliveryRequest(models.Model):
     package_photo = models.ImageField(upload_to='packages/', blank=True, null=True)
     special_instructions = models.TextField(blank=True, null=True)
     preferred_payment_method = models.CharField(max_length=20, blank=True, null=True, default='CASH')
+    target_branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, related_name='delivery_requests')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     created_at = models.DateTimeField(auto_now_add=True)
 

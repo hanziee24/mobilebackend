@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from urllib.parse import urlparse
 from .models import Delivery, Notification, Rating, DeliveryRequest
-from user.models import User
+from user.models import User, Branch
 
 
 class BaseImageUrlSerializer(serializers.ModelSerializer):
@@ -59,12 +59,21 @@ class RiderSerializer(serializers.ModelSerializer):
 class DeliveryRequestSerializer(BaseImageUrlSerializer):
     customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
     package_photo = serializers.ImageField(required=False, allow_null=True)
+    target_branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+    )
+    target_branch_name = serializers.CharField(source='target_branch.name', read_only=True)
+    target_branch_address = serializers.CharField(source='target_branch.address', read_only=True)
 
     class Meta:
         model = DeliveryRequest
         fields = ['id', 'customer_name', 'sender_name', 'sender_contact', 'sender_address',
                   'receiver_name', 'receiver_contact', 'receiver_address',
-                  'item_type', 'weight', 'quantity', 'is_fragile', 'package_photo', 'special_instructions', 'preferred_payment_method', 'status', 'created_at']
+                  'item_type', 'weight', 'quantity', 'is_fragile', 'package_photo',
+                  'special_instructions', 'preferred_payment_method', 'target_branch',
+                  'target_branch_name', 'target_branch_address', 'status', 'created_at']
         read_only_fields = ['id', 'status', 'created_at', 'customer_name']
 
     def to_representation(self, instance):

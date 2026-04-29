@@ -154,6 +154,58 @@ def _nearest_active_branch(lat, lng):
     return nearest_branch, nearest_distance
 
 
+def _nearest_active_branches(lat, lng, limit=None):
+    results = []
+    branches = Branch.objects.filter(is_active=True).exclude(latitude__isnull=True).exclude(longitude__isnull=True)
+    for branch in branches:
+        branch_lat = _to_float(branch.latitude)
+        branch_lng = _to_float(branch.longitude)
+        if branch_lat is None or branch_lng is None:
+            continue
+        results.append((branch, _distance_km(branch_lat, branch_lng, lat, lng)))
+    results.sort(key=lambda item: item[1])
+    if limit is not None:
+        return results[:limit]
+    return results
+
+
+MAX_REQUEST_BRANCH_CHOICES = 3
+
+
+def _resolve_delivery_request_branch(sender_address, requested_branch=None):
+    sender_lat, sender_lng = _extract_coordinates_from_address(sender_address)
+    if sender_lat is None or sender_lng is None:
+        return None, Response(
+            {'error': 'Sender address has no map pin. Please set the sender location on the map first.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    nearby_branches = _nearest_active_branches(sender_lat, sender_lng, limit=MAX_REQUEST_BRANCH_CHOICES)
+    if not nearby_branches:
+        return None, Response(
+            {'error': 'No active hub with map pin is available. Please configure hub coordinates first.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if requested_branch is None:
+        return nearby_branches[0][0], None
+
+    allowed_branch_ids = {branch.id for branch, _ in nearby_branches}
+    if requested_branch.id not in allowed_branch_ids:
+        nearby_names = ', '.join(branch.name for branch, _ in nearby_branches)
+        return None, Response(
+            {
+                'error': (
+                    'Selected hub is not near the sender location. '
+                    f'Please choose one of the nearby hubs: {nearby_names}.'
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return requested_branch, None
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_fee_config(request):
@@ -374,6 +426,12 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             if not getattr(self.request.user, 'branch', None):
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError('You are not assigned to a hub. Please ask an admin to assign you to a branch before accepting parcels.')
+            if delivery_request and delivery_request.target_branch_id and delivery_request.target_branch_id != self.request.user.branch_id:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(
+                    f'This parcel request is assigned to {delivery_request.target_branch.name}. '
+                    'Only cashiers from that hub can accept it.'
+                )
             # Try to link to existing customer account by sender phone number
             sender_contact = self.request.data.get('sender_contact', '')
             sender_name = (self.request.data.get('sender_name') or '').strip().lower()
@@ -901,14 +959,24 @@ def create_delivery_request(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    delivery_request = serializer.save(customer=request.user)
-    cashiers = User.objects.filter(user_type='CASHIER', is_active=True)
+    target_branch, target_branch_error = _resolve_delivery_request_branch(
+        serializer.validated_data.get('sender_address'),
+        serializer.validated_data.get('target_branch'),
+    )
+    if target_branch_error:
+        return target_branch_error
+
+    delivery_request = serializer.save(customer=request.user, target_branch=target_branch)
+    cashiers = User.objects.filter(user_type='CASHIER', is_active=True, branch_id=target_branch.id)
     for cashier in cashiers:
         try:
             Notification.objects.create(
                 user=cashier,
                 title='New Delivery Request',
-                message=f'{request.user.get_full_name() or request.user.username} sent a delivery request to the cashier.',
+                message=(
+                    f'{request.user.get_full_name() or request.user.username} sent a delivery request '
+                    f'for {target_branch.name}.'
+                ),
             )
         except Exception:
             logger.exception(
@@ -928,7 +996,12 @@ def create_delivery_request(request):
 def list_delivery_requests(request):
     if request.user.user_type == 'CUSTOMER':
         requests_qs = DeliveryRequest.objects.filter(customer=request.user, status='PENDING')
-    elif request.user.user_type in ('CASHIER', 'ADMIN'):
+    elif request.user.user_type == 'CASHIER':
+        if not request.user.branch_id:
+            requests_qs = DeliveryRequest.objects.none()
+        else:
+            requests_qs = DeliveryRequest.objects.filter(status='PENDING', target_branch_id=request.user.branch_id)
+    elif request.user.user_type == 'ADMIN':
         requests_qs = DeliveryRequest.objects.filter(status='PENDING')
     else:
         return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
@@ -944,6 +1017,14 @@ def accept_delivery_request(request, request_id):
         dr = DeliveryRequest.objects.get(id=request_id, status='PENDING')
     except DeliveryRequest.DoesNotExist:
         return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+    if request.user.user_type == 'CASHIER':
+        if not request.user.branch_id:
+            return Response({'error': 'You are not assigned to a hub.'}, status=status.HTTP_403_FORBIDDEN)
+        if dr.target_branch_id and dr.target_branch_id != request.user.branch_id:
+            return Response(
+                {'error': f'This request belongs to {dr.target_branch.name}. Only that hub can accept it.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
     dr.status = 'ACCEPTED'
     dr.save(update_fields=['status'])
     return Response(DeliveryRequestSerializer(dr, context={'request': request}).data)
