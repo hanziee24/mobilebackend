@@ -1,4 +1,8 @@
 import logging
+import smtplib
+import socket
+import ssl
+from email.message import EmailMessage
 from typing import Iterable
 
 from django.conf import settings
@@ -6,6 +10,8 @@ from django.core.mail import send_mail
 
 
 logger = logging.getLogger(__name__)
+
+BREVO_FALLBACK_PORTS = (2525, 587, 465)
 
 
 def _mask_value(value: str) -> str:
@@ -62,6 +68,93 @@ def build_email_diagnostics() -> dict:
     }
 
 
+def _uses_brevo_smtp() -> bool:
+    backend = (getattr(settings, 'EMAIL_BACKEND', '') or '').lower()
+    host = (getattr(settings, 'EMAIL_HOST', '') or '').lower()
+    return 'smtp' in backend and 'brevo' in host
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    return isinstance(exc, (TimeoutError, socket.timeout)) or 'timed out' in str(exc).lower()
+
+
+def _smtp_timeout() -> int:
+    timeout = getattr(settings, 'EMAIL_TIMEOUT', 30)
+    try:
+        return max(5, int(timeout))
+    except (TypeError, ValueError):
+        return 30
+
+
+def _brevo_candidate_ports() -> list[int]:
+    candidates = []
+    try:
+        configured_port = int(getattr(settings, 'EMAIL_PORT', 587))
+        candidates.append(configured_port)
+    except (TypeError, ValueError):
+        configured_port = None
+
+    for port in BREVO_FALLBACK_PORTS:
+        if port not in candidates:
+            candidates.append(port)
+    return candidates
+
+
+def _send_via_smtp_port(subject: str, message: str, recipients: list[str], port: int) -> int:
+    host = (getattr(settings, 'EMAIL_HOST', '') or '').strip()
+    username = (getattr(settings, 'EMAIL_HOST_USER', '') or '').strip()
+    password = (getattr(settings, 'EMAIL_HOST_PASSWORD', '') or '').strip()
+    from_email = get_system_from_email()
+
+    email = EmailMessage()
+    email['Subject'] = subject
+    email['From'] = from_email
+    email['To'] = ', '.join(recipients)
+    email.set_content(message)
+
+    timeout = _smtp_timeout()
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
+            if username:
+                server.login(username, password)
+            server.send_message(email)
+            return 1
+
+    with smtplib.SMTP(host, port, timeout=timeout) as server:
+        server.ehlo()
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+        if username:
+            server.login(username, password)
+        server.send_message(email)
+        return 1
+
+
+def _retry_brevo_send_after_timeout(subject: str, message: str, recipients: list[str], original_exc: Exception) -> int:
+    last_exc = original_exc
+    configured_port = getattr(settings, 'EMAIL_PORT', None)
+
+    for port in _brevo_candidate_ports():
+        if str(port) == str(configured_port):
+            continue
+        try:
+            result = _send_via_smtp_port(subject, message, recipients, port)
+            logger.warning(
+                'Recovered Brevo email delivery after timeout by retrying SMTP port %s.',
+                port,
+            )
+            return result
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                'Brevo retry on SMTP port %s failed: %s',
+                port,
+                exc,
+            )
+
+    raise last_exc
+
+
 def send_system_email(
     subject: str,
     message: str,
@@ -78,7 +171,13 @@ def send_system_email(
             recipients,
             fail_silently=fail_silently,
         )
-    except Exception:
+    except Exception as exc:
+        if _uses_brevo_smtp() and _is_timeout_error(exc):
+            try:
+                return _retry_brevo_send_after_timeout(subject, message, recipients, exc)
+            except Exception as retry_exc:
+                exc = retry_exc
+
         diagnostics = build_email_diagnostics()
         logger.exception(
             'Email delivery failed. host=%s port=%s tls=%s ssl=%s timeout=%s from_email=%s host_user=%s recipients=%s warnings=%s',
@@ -94,4 +193,4 @@ def send_system_email(
         )
         if fail_silently:
             return 0
-        raise
+        raise exc

@@ -8,7 +8,7 @@ from django.test import override_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from .email_utils import build_email_diagnostics, get_system_from_email
+from .email_utils import build_email_diagnostics, get_system_from_email, send_system_email
 from .models import User
 
 
@@ -85,6 +85,28 @@ class EmailUtilsTests(TestCase):
             'Brevo may reject Gmail sender addresses unless that exact sender is verified in Brevo.',
             diagnostics['warnings'],
         )
+
+    @override_settings(
+        DEFAULT_FROM_EMAIL='sender@example.com',
+        EMAIL_HOST='smtp-relay.brevo.com',
+        EMAIL_HOST_USER='mailer@example.com',
+        EMAIL_HOST_PASSWORD='secret',
+        EMAIL_TIMEOUT=10,
+        EMAIL_PORT=587,
+        EMAIL_BACKEND='django.core.mail.backends.smtp.EmailBackend',
+    )
+    @patch('user.email_utils._send_via_smtp_port', return_value=1)
+    @patch('user.email_utils.send_mail', side_effect=TimeoutError('timed out'))
+    def test_send_system_email_retries_other_brevo_ports_after_timeout(self, _mock_send_mail, mock_retry):
+        result = send_system_email(
+            'Subject',
+            'Body',
+            ['receiver@example.com'],
+            fail_silently=False,
+        )
+
+        self.assertEqual(result, 1)
+        mock_retry.assert_called_once_with('Subject', 'Body', ['receiver@example.com'], 2525)
 
 
 class ForgotPasswordEmailErrorTests(TestCase):
