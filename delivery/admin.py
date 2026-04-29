@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Delivery, Notification, Rating
+from .models import Delivery, Notification, Rating, DeliveryRequest
 
 @admin.register(Delivery)
 class DeliveryAdmin(admin.ModelAdmin):
@@ -79,3 +79,61 @@ class RatingAdmin(admin.ModelAdmin):
     list_display = ['customer', 'rider', 'rating', 'delivery', 'created_at']
     list_filter = ['rating', 'created_at']
     search_fields = ['customer__username', 'rider__username', 'delivery__tracking_number']
+
+
+@admin.register(DeliveryRequest)
+class DeliveryRequestAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'customer', 'sender_name', 'receiver_name', 'target_branch',
+        'preferred_payment_method', 'status_badge', 'is_fragile', 'created_at'
+    ]
+    list_filter = ['status', 'is_fragile', 'preferred_payment_method', 'target_branch', 'created_at']
+    search_fields = [
+        'customer__username', 'customer__first_name', 'customer__last_name',
+        'sender_name', 'sender_contact', 'receiver_name', 'receiver_contact',
+        'sender_address', 'receiver_address', 'item_type'
+    ]
+    readonly_fields = ['created_at', 'package_photo_preview']
+    ordering = ['-created_at']
+    date_hierarchy = 'created_at'
+    list_per_page = 25
+
+    fieldsets = (
+        ('Request Info', {
+            'fields': ('customer', 'status', 'target_branch', 'created_at')
+        }),
+        ('Sender', {
+            'fields': ('sender_name', 'sender_contact', 'sender_address')
+        }),
+        ('Receiver', {
+            'fields': ('receiver_name', 'receiver_contact', 'receiver_address')
+        }),
+        ('Parcel', {
+            'fields': (
+                'item_type', 'weight', 'quantity', 'is_fragile',
+                'special_instructions', 'package_photo', 'package_photo_preview'
+            )
+        }),
+        ('Payment', {
+            'fields': ('preferred_payment_method',)
+        }),
+    )
+
+    def status_badge(self, obj):
+        colors = {
+            'PENDING': '#FF9800',
+            'ACCEPTED': '#2E7D32',
+            'CANCELLED': '#C62828',
+        }
+        color = colors.get(obj.status, '#999')
+        return format_html(
+            '<span style="background:{};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold">{}</span>',
+            color, obj.status.replace('_', ' ')
+        )
+    status_badge.short_description = 'Status'
+
+    def package_photo_preview(self, obj):
+        if obj.package_photo:
+            return format_html('<img src="{}" style="max-height:200px;border-radius:8px" />', obj.package_photo.url)
+        return '—'
+    package_photo_preview.short_description = 'Package Photo Preview'
