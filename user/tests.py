@@ -1,6 +1,7 @@
 import base64
 import os
 import shutil
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.test import override_settings
@@ -84,6 +85,28 @@ class EmailUtilsTests(TestCase):
             'Brevo may reject Gmail sender addresses unless that exact sender is verified in Brevo.',
             diagnostics['warnings'],
         )
+
+
+class ForgotPasswordEmailErrorTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='forgot_pw_user',
+            email='forgot_pw@example.com',
+            password='Testpass123!',
+            user_type='CUSTOMER',
+            is_approved=True,
+            is_email_verified=True,
+        )
+
+    @override_settings(DEBUG=True)
+    @patch('user.views.send_system_email', side_effect=Exception('550 Sender address rejected'))
+    def test_forgot_password_returns_real_mail_error_in_debug(self, _mock_send):
+        response = self.client.post('/api/auth/forgot-password/', {'email': self.user.email}, format='json')
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn('Failed to send reset code. Please try again.', response.data['error'])
+        self.assertIn('550 Sender address rejected', response.data['error'])
 
 
 TEST_MEDIA_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'test_media')

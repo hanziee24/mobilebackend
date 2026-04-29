@@ -28,6 +28,16 @@ PENDING_REG_TIMEOUT = 600  # 10 minutes
 def _generate_verification_code():
     return f"{random.randint(0, 999999):06d}"
 
+
+def _mail_error_response(message: str, exc: Exception):
+    if settings.DEBUG:
+        return Response(
+            {'error': f'{message} ({exc})'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return Response({'error': message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 def _send_otp_email(email: str, code: str):
     subject = 'Your JRNZ Tracking Express verification code'
     message = (
@@ -315,7 +325,7 @@ def register_view(request):
     except Exception as e:
         print(f"Email send error: {e}")
         PendingRegistration.objects.filter(email=email).delete()
-        return Response({'error': 'Failed to send verification email. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _mail_error_response('Failed to send verification email. Please try again.', e)
 
     return Response({'message': 'Verification code sent. Please check your email.'}, status=status.HTTP_200_OK)
 
@@ -710,7 +720,7 @@ def resend_verification(request):
             _send_otp_email(email, code)
         except Exception as e:
             print(f"Resend verification error: {e}")
-            return Response({'error': 'Failed to send verification code. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return _mail_error_response('Failed to send verification code. Please try again later.', e)
         return Response({'message': 'Verification code sent'})
     except PendingRegistration.DoesNotExist:
         pass
@@ -728,7 +738,7 @@ def resend_verification(request):
         _send_verification_email(user)
     except Exception as e:
         print(f"Resend verification error: {e}")
-        return Response({'error': 'Failed to send verification code. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _mail_error_response('Failed to send verification code. Please try again later.', e)
 
     return Response({'message': 'Verification code sent'})
 
@@ -759,7 +769,7 @@ def reset_mpin(request):
         )
     except Exception as e:
         print(f'MPIN reset email error: {e}')
-        return Response({'error': 'Failed to send email. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _mail_error_response('Failed to send email. Please try again.', e)
 
     return Response({'mpin': new_mpin, 'user_id': user.id}, status=status.HTTP_200_OK)
 
@@ -792,7 +802,7 @@ def forgot_password_request(request):
         )
     except Exception as e:
         print(f'Forgot password email error: {e}')
-        return Response({'error': 'Failed to send reset code. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return _mail_error_response('Failed to send reset code. Please try again.', e)
     return Response({'message': 'Password reset code sent to your email.'}, status=status.HTTP_200_OK)
 
 
