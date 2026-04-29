@@ -4,6 +4,46 @@ from urllib.parse import urlparse
 from .models import User, SupportTicket, SavedAddress, Branch
 
 
+def build_image_url(image_field, request=None):
+    if not image_field:
+        return None
+    try:
+        url = image_field.url if hasattr(image_field, 'url') else str(image_field)
+    except Exception:
+        url = str(image_field)
+
+    if not url:
+        return None
+
+    parsed = urlparse(url)
+    if parsed.scheme in ('http', 'https'):
+        return url
+    if url.startswith('//'):
+        return f'https:{url}'
+
+    if not url.startswith('/'):
+        url = f'/{url}'
+
+    if request:
+        absolute_url = request.build_absolute_uri(url)
+        forwarded_proto = request.META.get('HTTP_X_FORWARDED_PROTO', '')
+        if forwarded_proto.lower() == 'https' and absolute_url.startswith('http://'):
+            return absolute_url.replace('http://', 'https://', 1)
+        return absolute_url
+    return url
+
+
+class NullableAbsoluteImageField(serializers.ImageField):
+    def to_internal_value(self, data):
+        if data in ('', None, 'null'):
+            return None
+        return super().to_internal_value(data)
+
+    def to_representation(self, value):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return build_image_url(value, request)
+
+
 class BranchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Branch
@@ -19,36 +59,10 @@ class UserSerializer(serializers.ModelSerializer):
     photo_left = serializers.SerializerMethodField()
     photo_right = serializers.SerializerMethodField()
     motorcycle_registration = serializers.SerializerMethodField()
-    gcash_qr = serializers.SerializerMethodField()
+    gcash_qr = NullableAbsoluteImageField(required=False, allow_null=True)
 
     def _get_image_url(self, image_field):
-        if not image_field:
-            return None
-        try:
-            url = image_field.url if hasattr(image_field, 'url') else str(image_field)
-        except Exception:
-            url = str(image_field)
-
-        if not url:
-            return None
-
-        parsed = urlparse(url)
-        if parsed.scheme in ('http', 'https'):
-            return url
-        if url.startswith('//'):
-            return f'https:{url}'
-
-        if not url.startswith('/'):
-            url = f'/{url}'
-
-        request = self.context.get('request')
-        if request:
-            absolute_url = request.build_absolute_uri(url)
-            forwarded_proto = request.META.get('HTTP_X_FORWARDED_PROTO', '')
-            if forwarded_proto.lower() == 'https' and absolute_url.startswith('http://'):
-                return absolute_url.replace('http://', 'https://', 1)
-            return absolute_url
-        return url
+        return build_image_url(image_field, self.context.get('request'))
 
     def get_identity_image(self, obj):
         return self._get_image_url(obj.identity_image)
@@ -64,9 +78,6 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_motorcycle_registration(self, obj):
         return self._get_image_url(obj.motorcycle_registration)
-
-    def get_gcash_qr(self, obj):
-        return self._get_image_url(obj.gcash_qr)
 
     class Meta:
         model = User

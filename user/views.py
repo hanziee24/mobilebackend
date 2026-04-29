@@ -6,7 +6,6 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
@@ -22,6 +21,7 @@ from .serializers import (
     SupportTicketSerializer,
     SupportTicketUpdateSerializer,
 )
+from .email_utils import send_system_email
 
 PENDING_REG_TIMEOUT = 600  # 10 minutes
 
@@ -34,10 +34,9 @@ def _send_otp_email(email: str, code: str):
         f'Your verification code is {code}.\n\n'
         'This code expires in 10 minutes.'
     )
-    send_mail(
+    send_system_email(
         subject,
         message,
-        getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
         [email],
         fail_silently=False,
     )
@@ -219,7 +218,7 @@ def create_staff(request):
         # Send credentials email to the new staff member
         role_label = 'Rider' if user_type == 'RIDER' else 'Cashier'
         try:
-            send_mail(
+            send_system_email(
                 subject=f'Your JRNZ Tracking Express {role_label} Account',
                 message=(
                     f'Hi {user.first_name},\n\n'
@@ -230,7 +229,6 @@ def create_staff(request):
                     f'Please login to the JRNZ Tracking Express app and change your password after your first login.\n\n'
                     f'JRNZ Tracking Express Team'
                 ),
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
                 recipient_list=[user.email],
                 fail_silently=True,
             )
@@ -516,10 +514,9 @@ def approve_user(request, user_id):
         user.rejection_reason = None
         user.save(update_fields=['is_approved', 'is_rejected', 'rejection_reason'])
         try:
-            send_mail(
+            send_system_email(
                 'Your JRNZ Tracking Express account has been approved',
                 f'Hi {user.first_name},\n\nGreat news! Your account has been approved. You can now log in to JRNZ Tracking Express.\n\nWelcome aboard!\n\nJRNZ Tracking Express Team',
-                getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
                 [user.email],
                 fail_silently=True,
             )
@@ -569,10 +566,9 @@ def reject_user(request, user_id):
         user.rejection_reason = reason
         user.save(update_fields=['is_approved', 'is_rejected', 'rejection_reason'])
         try:
-            send_mail(
+            send_system_email(
                 'Your JRNZ Tracking Express account application was not approved',
                 f'Hi {user.first_name},\n\nWe have reviewed your account application and unfortunately we are unable to approve it at this time.\n\nReason: {reason}\n\nIf you believe this is a mistake or would like to reapply, please register again with the correct information.\n\nJRNZ Tracking Express Team',
-                getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
                 [user.email],
                 fail_silently=True,
             )
@@ -750,7 +746,7 @@ def reset_mpin(request):
 
     new_mpin = f"{random.randint(0, 999999):06d}"
     try:
-        send_mail(
+        send_system_email(
             subject='Your JRNZ Tracking Express MPIN Reset',
             message=(
                 f'Hi {user.first_name},\n\n'
@@ -758,7 +754,6 @@ def reset_mpin(request):
                 f'Please log in and change your MPIN immediately after using this code.\n\n'
                 f'JRNZ Tracking Express Team'
             ),
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
             recipient_list=[user.email],
             fail_silently=False,
         )
@@ -784,7 +779,7 @@ def forgot_password_request(request):
     user.email_verification_expires = timezone.now() + timedelta(minutes=10)
     user.save(update_fields=['email_verification_code', 'email_verification_expires'])
     try:
-        send_mail(
+        send_system_email(
             subject='Your JRNZ Tracking Express password reset code',
             message=(
                 f'Hi {user.first_name},\n\n'
@@ -792,7 +787,6 @@ def forgot_password_request(request):
                 f'This code expires in 10 minutes. If you did not request this, ignore this email.\n\n'
                 f'JRNZ Tracking Express Team'
             ),
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
             recipient_list=[user.email],
             fail_silently=False,
         )
@@ -872,7 +866,7 @@ def create_support_ticket(request):
     support_ticket_email = getattr(settings, 'SUPPORT_TICKET_EMAIL', 'deliverytrack2026@gmail.com')
     if support_ticket_email:
         try:
-            send_mail(
+            send_system_email(
                 subject=f'New Support Concern: {ticket.get_concern_type_display()}',
                 message=(
                     f'New concern received from landing chatbot.\n\n'
@@ -882,7 +876,6 @@ def create_support_ticket(request):
                     f'Concern:\n{ticket.concern}\n\n'
                     f'Ticket ID: {ticket.id}'
                 ),
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@deliverytrack.local'),
                 recipient_list=[support_ticket_email],
                 fail_silently=True,
             )
